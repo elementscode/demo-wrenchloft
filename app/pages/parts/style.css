@@ -1,0 +1,92 @@
+@import "#app/shared/styles/page.css";
+
+.parts-head {
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.parts-head h1 {
+  margin: 0;
+}
+
+.reorder {
+  border-color: var(--warning-edge);
+}
+
+.reorder .card-head {
+  background: var(--warning-soft);
+}
+
+.reorder-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reorder-item {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.reorder-item strong {
+  font-size: var(--text-base);
+}
+
+.reorder-need {
+  color: var(--warning-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.sku {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+.stock-table td,
+.stock-table th {
+  font-size: var(--text-sm);
+  vertical-align: middle;
+}
+
+.stock-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  text-align: end;
+}
+
+.stock-num.is-low {
+  color: var(--danger-ink);
+}
+
+.receive {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.receive input {
+  width: 4.5rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.parts-filter {
+  max-width: 22rem;
+}
+
+@media (max-width: 40rem) {
+  .stock-table .hide-sm {
+    display: none;
+  }
+}

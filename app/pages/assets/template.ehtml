@@ -1,0 +1,109 @@
+import "./style.css";
+import { ValidationError } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { Role } from "#app/shared/services/auth";
+import { AssetRow, AssetForm, createAsset } from "#app/shared/services/assets";
+import { shortDate } from "#app/shared/services/format";
+
+interface State {
+  list: AssetRow[];
+  adding: boolean;
+  errors: Record<string, string[]>;
+}
+
+function emptyForm(): AssetForm {
+  return {
+    name: "",
+    building: "",
+    line: "",
+    category: "",
+  };
+}
+
+function buildings(list: AssetRow[]): { id: string; assets: AssetRow[] }[] {
+  let names = [...new Set(list.map((a) => a.building))];
+  return names.map((id) => ({ id, assets: list.filter((a) => a.building === id) }));
+}
+
+function onCreate(state: State, form: AssetForm, reset: () => void) {
+  state.errors = {};
+
+  try {
+    state.list = createAsset(form);
+    state.adding = false;
+    reset();
+  } catch (err: any) {
+    if (err instanceof ValidationError && err.errors) {
+      state.errors = err.errors as Record<string, string[]>;
+    }
+  }
+}
+
+<html lang="en" class="page-assets" (
+  initial: AssetRow[],
+  role: Role,
+  private state: State = {
+    list: initial,
+    adding: false,
+    errors: {},
+  },
+  private form: AssetForm = emptyForm(),
+)>
+  <Layout title="Assets" active="assets" shell="is-wide">
+    <div class="stack is-lg">
+      <div class="assets-head row">
+        <h1>Assets</h1>
+        <button e:if={role === "manager"} class="is-primary" onclick={() => state.adding = !state.adding}>{state.adding ? "Close" : "Add asset"}</button>
+      </div>
+
+      <section e:if={state.adding} class="card">
+        <div class="card-head"><h2>New asset</h2></div>
+        <form class="card-body is-grid" onsubmit={() => onCreate(state, form, () => form = emptyForm())}>
+          <div class="field">
+            <label for="a-name">Name</label>
+            <input id="a-name" value={form.name} placeholder="Press 400T #3" class={[state.errors.name && "is-error"]}>
+          </div>
+          <div class="field">
+            <label for="a-category">Category</label>
+            <input id="a-category" value={form.category} placeholder="Press" class={[state.errors.category && "is-error"]}>
+          </div>
+          <div class="field">
+            <label for="a-building">Building</label>
+            <input id="a-building" value={form.building} list="buildings" class={[state.errors.building && "is-error"]}>
+            <datalist id="buildings">
+              <option e:for={b of buildings(state.list)} value={b.id}></option>
+            </datalist>
+          </div>
+          <div class="field">
+            <label for="a-line">Production line</label>
+            <input id="a-line" value={form.line} placeholder="Line 1" class={[state.errors.line && "is-error"]}>
+          </div>
+          <p e:if={Object.keys(state.errors).length > 0} class="error field is-full">Fill in every field.</p>
+          <div class="form-actions row field is-full">
+            <button type="submit" class="is-primary">Add asset</button>
+          </div>
+        </form>
+      </section>
+
+      <section e:for={b of buildings(state.list)} class="building stack">
+        <h2>{b.id}</h2>
+        <ul class="asset-grid">
+          <li e:for={a of b.assets}>
+            <a class={["asset", a.down && "is-down"]} href={`/equipment/${a.id}`}>
+              <div class="asset-top row">
+                <span class="asset-name">{a.name}</span>
+                <span e:if={a.down} class="pill is-danger"><span class="pill-dot"></span>Down</span>
+              </div>
+              <span class="asset-meta">{a.line} · {a.category}</span>
+              <div class="asset-stats cluster">
+                <span>{a.openCount} open</span>
+                <span>{a.schedules} preventive</span>
+                <span>{a.lastWork ? `Last work ${shortDate(a.lastWork)}` : "Nothing finished yet"}</span>
+              </div>
+            </a>
+          </li>
+        </ul>
+      </section>
+    </div>
+  </Layout>
+</html>

@@ -1,0 +1,214 @@
+@import "#app/shared/styles/page.css";
+
+.wo-back {
+  font-size: var(--text-sm);
+}
+
+.wo-heading {
+  gap: var(--space-2);
+}
+
+.wo-heading h1 {
+  margin: 0;
+}
+
+.wo-kicker {
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.wo-kicker .wo-number {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+
+.wo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.wo-actions {
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+}
+
+.wo-actions .timer {
+  font-size: var(--text-2xl);
+}
+
+.wo-actions-buttons {
+  gap: var(--space-2);
+}
+
+.wo-description {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.wo-dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.wo-dl dt {
+  color: var(--ink-soft);
+}
+
+.wo-dl dd {
+  margin: 0;
+  text-align: end;
+}
+
+.wo-dl .is-late {
+  color: var(--danger-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.note:first-child {
+  padding-top: 0;
+}
+
+.note-meta {
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+.note-author {
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+}
+
+.note-body {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.note-form textarea {
+  min-height: 4.5rem;
+}
+
+.note-form {
+  gap: var(--space-2);
+}
+
+.photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photos a {
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.photos img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-pick {
+  position: relative;
+  overflow: hidden;
+}
+
+.photo-pick input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.empty-line {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-dim);
+}
+
+.parts-used {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.parts-used li {
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--text-sm);
+}
+
+.parts-used .sku {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+.part-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5rem auto;
+  gap: var(--space-2);
+}
+
+.edit-form {
+  gap: var(--space-3);
+}
+
+.card-head.row {
+  justify-content: space-between;
+}
+
+@media (max-width: 52rem) {
+  .wo-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .wo-actions {
+    position: sticky;
+    top: 6.25rem;
+    z-index: 5;
+  }
+
+  .wo-actions-buttons {
+    width: 100%;
+  }
+
+  .wo-actions-buttons button {
+    flex: 1;
+  }
+}

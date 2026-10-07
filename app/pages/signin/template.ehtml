@@ -1,0 +1,103 @@
+import "./style.css";
+import { redirect } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { signin, DemoLogin, DEMO_PASSWORD } from "#app/shared/services/auth";
+
+interface SigninForm {
+  email: string;
+  password: string;
+  error: string;
+  busy: boolean;
+}
+
+const ROLE_PILL: Record<string, string> = {
+  manager: "is-accent",
+  technician: "is-info",
+  requester: "",
+};
+
+function onSubmit(form: SigninForm) {
+  form.busy = true;
+
+  try {
+    let home = signin(form.email, form.password);
+    form.error = "";
+    redirect(home);
+  } catch (err: any) {
+    form.error = err.message;
+    form.busy = false;
+  }
+}
+
+function onPick(form: SigninForm, login: DemoLogin) {
+  form.email = login.email;
+  form.password = DEMO_PASSWORD;
+  onSubmit(form);
+}
+
+<html lang="en" class="page-signin" (
+  logins: DemoLogin[],
+  private form: SigninForm = {
+    email: "",
+    password: "",
+    error: "",
+    busy: false,
+  },
+)>
+  <Layout title="Sign in">
+    <div class="signin-grid">
+      <form class="stack" onsubmit={() => onSubmit(form)}>
+        <div class="stack is-sm">
+          <h1>Sign in</h1>
+          <p class="signin-intro">Maintenance work orders for the plant floor.</p>
+        </div>
+
+        <p e:if={form.error} class="error" role="alert">{form.error}</p>
+
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email"
+                 name="email"
+                 type="email"
+                 value={form.email}
+                 autocomplete="email"
+                 autocapitalize="none"
+                 spellcheck={false}
+                 placeholder="you@plant.com"
+                 required>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password"
+                 name="password"
+                 type="password"
+                 value={form.password}
+                 autocomplete="current-password"
+                 required>
+        </div>
+
+        <button type="submit" class="is-primary" disabled={form.busy}>Sign in</button>
+      </form>
+
+      <section e:if={logins.length > 0} class="card">
+        <div class="card-head">
+          <h2>Demo accounts</h2>
+        </div>
+        <div class="card-body stack">
+          <p class="hint">Every account uses the password <span class="demo-password">{DEMO_PASSWORD}</span>. Pick one to sign in.</p>
+
+          <ul class="demo-list stack is-sm">
+            <li e:for={login of logins} id={login.email}>
+              <button type="button" class="demo-login" disabled={form.busy} onclick={() => onPick(form, login)}>
+                <span class="demo-name">{login.name}</span>
+                <span class="demo-email">{login.email}</span>
+                <span class={["pill", ROLE_PILL[login.role]]}>{login.role}</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </Layout>
+</html>

@@ -1,0 +1,217 @@
+import "./style.css";
+import { ValidationError } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { AssetOption, Person, PRIORITIES } from "#app/shared/services/work-orders";
+import {
+  Schedule,
+  ScheduleForm,
+  LEAD_DAYS,
+  createSchedule,
+  setScheduleActive,
+  runScheduler,
+} from "#app/shared/services/preventive";
+import { dueLabel, dueLabelInline, shortDate, PRIORITY_PILL } from "#app/shared/services/format";
+
+interface State {
+  list: Schedule[];
+  adding: boolean;
+  busy: boolean;
+  message: string;
+  error: string;
+  errors: Record<string, string[]>;
+}
+
+function emptyForm(today: string): ScheduleForm {
+  return {
+    assetId: "",
+    title: "",
+    description: "",
+    priority: "medium",
+    every: 2,
+    unit: "weeks",
+    nextDue: today,
+    assignedTo: "",
+  };
+}
+
+function onCreate(state: State, form: ScheduleForm, reset: () => void) {
+  state.busy = true;
+  state.errors = {};
+  state.error = "";
+
+  try {
+    state.list = createSchedule(form);
+    state.adding = false;
+    state.message = `Added "${form.title}". Its first work order is created ${LEAD_DAYS} days before it is due.`;
+    reset();
+  } catch (err: any) {
+    if (err instanceof ValidationError && err.errors) {
+      state.errors = err.errors as Record<string, string[]>;
+    } else {
+      state.error = err.message;
+    }
+  }
+
+  state.busy = false;
+}
+
+function onToggle(state: State, s: Schedule) {
+  try {
+    state.list = setScheduleActive(s.id, !s.active);
+  } catch (err: any) {
+    state.error = err.message;
+  }
+}
+
+function onRun(state: State) {
+  state.busy = true;
+  state.error = "";
+
+  try {
+    let result = runScheduler();
+    state.list = result.schedules;
+    state.message = result.created === 0
+      ? "Nothing new is coming due."
+      : `Created ${result.created} preventive work order${result.created === 1 ? "" : "s"}.`;
+  } catch (err: any) {
+    state.error = err.message;
+  }
+
+  state.busy = false;
+}
+
+function interval(s: Schedule): string {
+  let unit = s.every === 1 ? s.unit.slice(0, -1) : s.unit;
+  return s.every === 1 ? `Every ${unit}` : `Every ${s.every} ${unit}`;
+}
+
+<html lang="en" class="page-preventive" (
+  initial: Schedule[],
+  assets: AssetOption[],
+  techs: Person[],
+  today: string,
+  private state: State = {
+    list: initial,
+    adding: false,
+    busy: false,
+    message: "",
+    error: "",
+    errors: {},
+  },
+  private form: ScheduleForm = emptyForm(today),
+)>
+  <Layout title="Preventive maintenance" active="pm" shell="is-wide">
+    <div class="stack is-lg">
+      <div class="pm-head row">
+        <div class="stack is-xs">
+          <h1>Preventive maintenance</h1>
+          <p class="pm-lede">Each schedule creates its work order {LEAD_DAYS} days before it comes due, then rolls forward. Checked every 15 minutes.</p>
+        </div>
+        <div class="cluster">
+          <button disabled={state.busy} onclick={() => onRun(state)}>Check now</button>
+          <button class="is-primary" onclick={() => state.adding = !state.adding}>{state.adding ? "Close" : "New schedule"}</button>
+        </div>
+      </div>
+
+      <p e:if={state.message} class="callout is-success" role="status">{state.message}</p>
+      <p e:if={state.error} class="callout is-danger" role="alert">{state.error}</p>
+
+      <section e:if={state.adding} class="card">
+        <div class="card-head"><h2>New schedule</h2></div>
+        <form class="card-body is-grid pm-form" onsubmit={() => onCreate(state, form, () => form = emptyForm(today))}>
+          <div class="field">
+            <label for="pm-asset">Asset</label>
+            <select id="pm-asset" value={form.assetId} class={[state.errors.assetId && "is-error"]}>
+              <option value="">Pick the asset…</option>
+              <option e:for={a of assets} value={a.id}>{a.name} · {a.building}</option>
+            </select>
+            <p e:if={state.errors.assetId} class="error">{state.errors.assetId?.[0]}</p>
+          </div>
+
+          <div class="field">
+            <label for="pm-title">Task</label>
+            <input id="pm-title" value={form.title} placeholder="Grease bearings" class={[state.errors.title && "is-error"]}>
+            <p e:if={state.errors.title} class="error">{state.errors.title?.[0]}</p>
+          </div>
+
+          <div class="field">
+            <label for="pm-every">Repeats</label>
+            <div class="pm-every">
+              <input id="pm-every" type="number" min="1" step="1" value={form.every} class={[state.errors.every && "is-error"]}>
+              <select value={form.unit} aria-label="Unit">
+                <option value="days">days</option>
+                <option value="weeks">weeks</option>
+              </select>
+            </div>
+            <p e:if={state.errors.every} class="error">{state.errors.every?.[0]}</p>
+          </div>
+
+          <div class="field">
+            <label for="pm-first">First due</label>
+            <input id="pm-first" type="date" value={form.nextDue} class={[state.errors.nextDue && "is-error"]}>
+            <p e:if={state.errors.nextDue} class="error">{state.errors.nextDue?.[0]}</p>
+          </div>
+
+          <div class="field">
+            <label for="pm-tech">Technician</label>
+            <select id="pm-tech" value={form.assignedTo}>
+              <option value="">Assign when due</option>
+              <option e:for={t of techs} value={t.id}>{t.name}</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="pm-priority">Priority</label>
+            <select id="pm-priority" value={form.priority}>
+              <option e:for={p of PRIORITIES} id={p.key} value={p.key}>{p.label}</option>
+            </select>
+          </div>
+
+          <div class="field is-full">
+            <label for="pm-description">Checklist</label>
+            <textarea id="pm-description" value={form.description} placeholder="What the technician does each time."></textarea>
+          </div>
+
+          <div class="form-actions row field is-full">
+            <button type="submit" class="is-primary" disabled={state.busy}>Add schedule</button>
+          </div>
+        </form>
+      </section>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table class="pm-table">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Repeats</th>
+                <th>Current order</th>
+                <th>After that</th>
+                <th>Technician</th>
+                <th>Last done</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr e:for={s of state.list} class={[!s.active && "is-paused"]}>
+                <td>
+                  <span class="pm-task">{s.title}</span>
+                  <a class="pm-sub" href={`/equipment/${s.assetId}`}>{s.assetName} · {s.line}</a>
+                </td>
+                <td data-label="Repeats">{interval(s)} <span class={["pill", PRIORITY_PILL[s.priority]]}>{s.priority}</span></td>
+                <td data-label="Current order">
+                  <a e:if={s.openOrderId} href={`/work-orders/${s.openOrderId}`}>Due {dueLabelInline(s.openOrderDue, today)}</a>
+                  <span e:else class="pm-sub">None open</span>
+                </td>
+                <td data-label="After that">{s.active ? dueLabel(s.nextDue, today) : "Paused"}</td>
+                <td data-label="Technician">{s.assigneeName ?? "—"}</td>
+                <td data-label="Last done">{s.lastDone ? shortDate(s.lastDone) : "—"}</td>
+                <td class="pm-action"><button class="is-ghost is-sm" onclick={() => onToggle(state, s)}>{s.active ? "Pause" : "Resume"}</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </Layout>
+</html>

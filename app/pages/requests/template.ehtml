@@ -1,0 +1,58 @@
+import "./style.css";
+import { LiveView } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { WorkOrder } from "#app/shared/services/work-orders";
+import { STATUS_LABEL, STATUS_PILL, PRIORITY_PILL, shortDate, dueLabel, dueLabelInline } from "#app/shared/services/format";
+
+function newestFirst(orders: LiveView<WorkOrder>): WorkOrder[] {
+  return orders.sort((a, b) => Number(a.status === "done") - Number(b.status === "done") || b.number - a.number);
+}
+
+/** What a requester wants to know: who has it and when. */
+export function progress(wo: WorkOrder, today: string): string {
+  switch (wo.status) {
+    case "requested":
+      return "Waiting for maintenance to plan it";
+
+    case "scheduled":
+      return `${wo.assigneeName ?? "A technician"} · ${dueLabelInline(wo.dueDate, today)}`;
+
+    case "in_progress":
+      return `${wo.assigneeName ?? "A technician"} is working on it now`;
+
+    case "on_hold":
+      return `On hold with ${wo.assigneeName ?? "maintenance"}`;
+
+    default:
+      return `Finished ${wo.completedAt ? shortDate(wo.completedAt) : ""}`;
+  }
+}
+
+<html lang="en" class="page-requests" (
+  orders: LiveView<WorkOrder>,
+  today: string,
+)>
+  <Layout title="My requests" active="requests" shell="is-form">
+    <div class="stack is-lg">
+      <div class="requests-head row">
+        <h1>My requests</h1>
+        <a class="button is-primary" href="/work-orders/new">Report a problem</a>
+      </div>
+
+      <ul e:if={orders.length > 0} class="request-list stack">
+        <li e:for={wo of newestFirst(orders)}>
+          <a class="request" href={`/work-orders/${wo.id}`}>
+            <div class="request-top row">
+              <span class="request-num">WO-{wo.number} · {shortDate(wo.createdAt)}</span>
+              <span class={["pill", STATUS_PILL[wo.status]]}><span class="pill-dot"></span>{STATUS_LABEL[wo.status]}</span>
+            </div>
+            <span class="request-title">{wo.title}</span>
+            <span class="request-meta">{wo.assetName} · {wo.line}</span>
+            <span class="request-meta">{progress(wo, today)}</span>
+          </a>
+        </li>
+      </ul>
+      <p e:else class="requests-empty">Nothing reported yet. When a machine acts up, report it here.</p>
+    </div>
+  </Layout>
+</html>

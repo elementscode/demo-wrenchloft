@@ -1,0 +1,176 @@
+import "./style.css";
+import { LiveView, ValidationError } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { Role } from "#app/shared/services/auth";
+import { Part, PartForm, receiveStock, createPart } from "#app/shared/services/work-orders";
+
+interface State {
+  query: string;
+  adding: boolean;
+  error: string;
+  errors: Record<string, string[]>;
+  receive: Record<string, number>;
+}
+
+function emptyForm(): PartForm {
+  return {
+    sku: "",
+    name: "",
+    unit: "ea",
+    stock: 0,
+    reorderAt: 0,
+  };
+}
+
+function isLow(p: Part): boolean {
+  return p.stock <= p.reorderAt;
+}
+
+export function lowStock(stock: LiveView<Part>): Part[] {
+  return stock.filter(isLow).sort((a, b) => a.stock - a.reorderAt - (b.stock - b.reorderAt));
+}
+
+function matching(stock: LiveView<Part>, query: string): Part[] {
+  let q = query.trim().toLowerCase();
+
+  return stock
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Enough to get back over the reorder point with a little room. */
+export function suggestedOrder(p: Part): number {
+  return Math.max(p.reorderAt * 2 - p.stock, 1);
+}
+
+function onReceive(state: State, p: Part) {
+  let qty = Number(state.receive[p.id] ?? 0);
+  state.error = "";
+
+  try {
+    receiveStock(p.id, qty);
+    state.receive[p.id] = 0;
+  } catch (err: any) {
+    state.error = `${p.name}: ${err.message}`;
+  }
+}
+
+function onCreate(state: State, form: PartForm, reset: () => void) {
+  state.errors = {};
+
+  try {
+    createPart(form);
+    state.adding = false;
+    reset();
+  } catch (err: any) {
+    if (err instanceof ValidationError && err.errors) {
+      state.errors = err.errors as Record<string, string[]>;
+    } else {
+      state.error = err.message;
+    }
+  }
+}
+
+<html lang="en" class="page-parts" (
+  stock: LiveView<Part>,
+  role: Role,
+  private state: State = {
+    query: "",
+    adding: false,
+    error: "",
+    errors: {},
+    receive: {},
+  },
+  private form: PartForm = emptyForm(),
+)>
+  <Layout title="Parts" active="parts" shell="is-wide">
+    <div class="stack is-lg">
+      <div class="parts-head row">
+        <h1>Parts</h1>
+        <button e:if={role === "manager"} class="is-primary" onclick={() => state.adding = !state.adding}>{state.adding ? "Close" : "Add part"}</button>
+      </div>
+
+      <p e:if={state.error} class="callout is-danger" role="alert">{state.error}</p>
+
+      <section e:if={state.adding} class="card">
+        <div class="card-head"><h2>New part</h2></div>
+        <form class="card-body is-grid" onsubmit={() => onCreate(state, form, () => form = emptyForm())}>
+          <div class="field">
+            <label for="p-sku">SKU</label>
+            <input id="p-sku" value={form.sku} class={[state.errors.sku && "is-error"]}>
+            <p e:if={state.errors.sku} class="error">{state.errors.sku?.[0]}</p>
+          </div>
+          <div class="field">
+            <label for="p-name">Name</label>
+            <input id="p-name" value={form.name} class={[state.errors.name && "is-error"]}>
+            <p e:if={state.errors.name} class="error">{state.errors.name?.[0]}</p>
+          </div>
+          <div class="field">
+            <label for="p-stock">On hand</label>
+            <input id="p-stock" type="number" min="0" value={form.stock}>
+          </div>
+          <div class="field">
+            <label for="p-reorder">Reorder at</label>
+            <input id="p-reorder" type="number" min="0" value={form.reorderAt}>
+          </div>
+          <div class="field">
+            <label for="p-unit">Unit</label>
+            <input id="p-unit" value={form.unit} placeholder="ea">
+          </div>
+          <div class="form-actions row field is-full">
+            <button type="submit" class="is-primary">Add part</button>
+          </div>
+        </form>
+      </section>
+
+      <section class={["card", lowStock(stock).length > 0 && "reorder"]}>
+        <div class="card-head"><h2>To reorder</h2></div>
+        <div class="card-body">
+          <ul e:if={lowStock(stock).length > 0} class="reorder-list">
+            <li e:for={p of lowStock(stock)} class="reorder-item">
+              <strong>{p.name}</strong>
+              <span class="sku">{p.sku}</span>
+              <span>{p.stock} {p.unit} on hand · reorder at {p.reorderAt}</span>
+              <span class="reorder-need">Order {suggestedOrder(p)} {p.unit}</span>
+            </li>
+          </ul>
+          <p e:else class="hint">Everything is above its reorder point.</p>
+        </div>
+      </section>
+
+      <section class="stack">
+        <input class="parts-filter" type="search" value={state.query} placeholder="Search parts or SKU" aria-label="Search parts">
+
+        <div class="card table-wrap">
+          <table class="stock-table">
+            <thead>
+              <tr>
+                <th>Part</th>
+                <th class="hide-sm">SKU</th>
+                <th class="stock-num">On hand</th>
+                <th class="hide-sm">Reorder at</th>
+                <th class="hide-sm">Unit</th>
+                <th>Receive</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr e:for={p of matching(stock, state.query)}>
+                <td>{p.name}</td>
+                <td class="hide-sm"><span class="sku">{p.sku}</span></td>
+                <td class={["stock-num", isLow(p) && "is-low"]}>{p.stock}</td>
+                <td class="hide-sm">{p.reorderAt}</td>
+                <td class="hide-sm">{p.unit}</td>
+                <td>
+                  <form class="receive" onsubmit={() => onReceive(state, p)}>
+                    <input class="is-sm" type="number" min="1" step="1" value={state.receive[p.id]} aria-label={`Quantity of ${p.name} received`}>
+                    <button type="submit" class="is-sm">Add</button>
+                  </form>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </Layout>
+</html>

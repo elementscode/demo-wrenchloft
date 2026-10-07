@@ -1,0 +1,410 @@
+import "./style.css";
+import { LiveView, File, session } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { Timer } from "#app/shared/templates/timer";
+import { Role } from "#app/shared/services/auth";
+import {
+  WorkOrder,
+  Note,
+  PartUse,
+  Photo,
+  Part,
+  Person,
+  Status,
+  Priority,
+  STATUSES,
+  PRIORITIES,
+  startWork,
+  pauseWork,
+  finishWork,
+  usePart,
+  returnPart,
+  uploadPhotos,
+} from "#app/shared/services/work-orders";
+import {
+  dueLabel,
+  isOverdue,
+  hours,
+  elapsedSeconds,
+  timeAgo,
+  shortDate,
+  PRIORITY_PILL,
+  STATUS_PILL,
+  STATUS_LABEL,
+} from "#app/shared/services/format";
+
+interface UiState {
+  busy: boolean;
+  error: string;
+  note: string;
+  partId: string;
+  qty: number;
+  partError: string;
+  uploading: boolean;
+  photoError: string;
+  editing: boolean;
+}
+
+interface EditForm {
+  status: Status;
+  priority: Priority;
+  assignedTo: string;
+  dueDate: string;
+  assetDown: boolean;
+  title: string;
+  description: string;
+}
+
+function canWork(role: Role, wo: WorkOrder): boolean {
+  if (role === "manager") {
+    return true;
+  }
+
+  return role === "technician" && (!wo.assignedTo || wo.assignedTo === session.get("userId"));
+}
+
+function onAction(ui: UiState, action: "start" | "pause" | "finish", wo: WorkOrder) {
+  ui.busy = true;
+  ui.error = "";
+
+  try {
+    switch (action) {
+      case "start":
+        startWork(wo.id);
+        break;
+
+      case "pause":
+        pauseWork(wo.id);
+        break;
+
+      case "finish":
+        finishWork(wo.id);
+        break;
+    }
+  } catch (err: any) {
+    ui.error = err.message;
+  }
+
+  ui.busy = false;
+}
+
+function onNote(ui: UiState, notes: LiveView<Note>) {
+  let body = ui.note.trim();
+  if (!body) {
+    return;
+  }
+
+  notes.insert({
+    body,
+    authorId: session.get("userId") ?? null,
+    authorName: session.get("userName") ?? null,
+    createdAt: new Date(),
+  }, () => ui.note = "");
+}
+
+function onUsePart(ui: UiState, wo: WorkOrder) {
+  ui.partError = "";
+
+  if (!ui.partId) {
+    ui.partError = "pick a part";
+    return;
+  }
+
+  try {
+    usePart(wo.id, ui.partId, Number(ui.qty));
+    ui.partId = "";
+    ui.qty = 1;
+  } catch (err: any) {
+    ui.partError = err.message;
+  }
+}
+
+function onReturnPart(ui: UiState, use: PartUse) {
+  try {
+    returnPart(use.id);
+  } catch (err: any) {
+    ui.partError = err.message;
+  }
+}
+
+function onPhotos(e: Event, ui: UiState, wo: WorkOrder) {
+  let input = e.target as HTMLInputElement;
+  ui.uploading = true;
+  ui.photoError = "";
+
+  try {
+    let files = File.read(input);
+    uploadPhotos({
+      workOrderId: wo.id,
+      files,
+    });
+  } catch (err: any) {
+    ui.photoError = err.message;
+  }
+
+  input.value = "";
+  ui.uploading = false;
+}
+
+function onEdit(ui: UiState, edit: EditForm, wo: WorkOrder) {
+  edit.status = wo.status;
+  edit.priority = wo.priority;
+  edit.assignedTo = wo.assignedTo ?? "";
+  edit.dueDate = wo.dueDate ?? "";
+  edit.assetDown = wo.assetDown;
+  edit.title = wo.title;
+  edit.description = wo.description;
+  ui.error = "";
+  ui.editing = true;
+}
+
+function onSave(ui: UiState, edit: EditForm, orders: LiveView<WorkOrder>, wo: WorkOrder, techs: Person[]) {
+  try {
+    orders.update({
+      ...wo,
+      ...edit,
+      assignedTo: edit.assignedTo || null,
+      assigneeName: techs.find((t) => t.id === edit.assignedTo)?.name ?? null,
+      dueDate: edit.dueDate || null,
+    }, () => ui.editing = false);
+  } catch (err: any) {
+    ui.error = err.message;
+    ui.editing = true;
+  }
+}
+
+function partLabel(p: Part): string {
+  return `${p.name} (${p.stock} ${p.unit} on hand)`;
+}
+
+<html lang="en" class="page-work-order" (
+  id: string,
+  role: Role,
+  orders: LiveView<WorkOrder>,
+  notes: LiveView<Note>,
+  used: LiveView<PartUse>,
+  photos: LiveView<Photo>,
+  stock: LiveView<Part> | null,
+  techs: Person[],
+  today: string,
+  private ui: UiState = {
+    busy: false,
+    error: "",
+    note: "",
+    partId: "",
+    qty: 1,
+    partError: "",
+    uploading: false,
+    photoError: "",
+    editing: false,
+  },
+  private edit: EditForm = {
+    status: "requested",
+    priority: "medium",
+    assignedTo: "",
+    dueDate: "",
+    assetDown: false,
+    title: "",
+    description: "",
+  },
+  private now: { value: Date } = { value: new Date() },
+)>
+  <Layout title="Work order" active={role === "technician" ? "today" : role === "manager" ? "board" : "requests"}>
+    <div e:for={wo of orders} id={wo.id} class="stack is-lg">
+      <div class="stack is-sm">
+        <a class="wo-back" href={role === "technician" ? "/today" : role === "manager" ? "/board" : "/requests"}>← Back</a>
+        <div class="wo-kicker cluster">
+          <span class="wo-number">WO-{wo.number}</span>
+          <span class={["pill", STATUS_PILL[wo.status]]}><span class="pill-dot"></span>{STATUS_LABEL[wo.status]}</span>
+          <span class={["pill", PRIORITY_PILL[wo.priority]]}>{wo.priority}</span>
+          <span e:if={wo.pmScheduleId} class="pill">Preventive</span>
+          <span e:if={wo.assetDown && wo.status !== "done"} class="pill is-danger"><span class="pill-dot"></span>Asset down</span>
+        </div>
+        <h1>{wo.title}</h1>
+        <p class="wo-kicker"><a href={`/equipment/${wo.assetId}`}>{wo.assetName}</a> · {wo.building} · {wo.line}</p>
+      </div>
+
+      <div e:if={role !== "requester"} class="wo-actions row">
+        <div class="stack is-xs">
+          <span class="hint">Time on this job</span>
+          <Timer {wo} />
+        </div>
+
+        <div e:if={canWork(role, wo)} class="wo-actions-buttons row">
+          <button e:if={wo.status !== "in_progress" && wo.status !== "done"}
+                  class="is-primary is-lg"
+                  disabled={ui.busy}
+                  onclick={() => onAction(ui, "start", wo)}>{wo.secondsSpent > 0 ? "Resume" : "Start"}</button>
+          <button e:if={wo.status === "in_progress"}
+                  class="is-lg"
+                  disabled={ui.busy}
+                  onclick={() => onAction(ui, "pause", wo)}>Pause</button>
+          <button e:if={wo.status === "in_progress" || wo.status === "on_hold"}
+                  class="is-primary is-lg"
+                  disabled={ui.busy}
+                  onclick={() => onAction(ui, "finish", wo)}>Finish</button>
+          <span e:if={wo.status === "done"} class="pill is-success"><span class="pill-dot"></span>Finished {wo.completedAt ? shortDate(wo.completedAt) : ""}</span>
+        </div>
+        <p e:else class="hint">Assigned to {wo.assigneeName}</p>
+      </div>
+
+      <p e:if={ui.error} class="callout is-danger" role="alert">{ui.error}</p>
+
+      <div class="wo-layout">
+        <div class="stack is-lg">
+          <section class="card">
+            <div class="card-head"><h2>What's wrong</h2></div>
+            <div class="card-body">
+              <p e:if={wo.description} class="wo-description">{wo.description}</p>
+              <p e:else class="empty-line">No description.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head row">
+              <h2>Photos</h2>
+              <label class="button is-sm file-pick">
+                {ui.uploading ? "Uploading…" : "Add photos"}
+                <input type="file" accept="image/*" multiple disabled={ui.uploading} onchange={(e) => onPhotos(e, ui, wo)}>
+              </label>
+            </div>
+            <div class="card-body stack is-sm">
+              <p e:if={ui.photoError} class="error" role="alert">{ui.photoError}</p>
+              <ul e:if={photos.length > 0} class="photos">
+                <li e:for={photo of photos}>
+                  <a href={`/photos/${photo.id}`} target="_blank" rel="noopener">
+                    <img src={`/photos/${photo.id}`} alt={photo.name} loading="lazy" width="160" height="160">
+                  </a>
+                </li>
+              </ul>
+              <p e:else class="empty-line">No photos yet.</p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>Notes</h2></div>
+            <div class="card-body stack">
+              <ul e:if={notes.length > 0} class="notes">
+                <li e:for={note of notes.sort((a, b) => +a.createdAt - +b.createdAt)} class="note">
+                  <div class="note-meta row">
+                    <span class="note-author">{note.authorName ?? "Someone"}</span>
+                    <span>{timeAgo(note.createdAt, now.value)}</span>
+                  </div>
+                  <p class="note-body">{note.body}</p>
+                </li>
+              </ul>
+              <p e:else class="empty-line">No notes yet.</p>
+
+              <form class="note-form stack" onsubmit={() => onNote(ui, notes)}>
+                <textarea value={ui.note} placeholder="What did you find, what did you do?" aria-label="New note"></textarea>
+                <div class="form-actions row">
+                  <button type="submit" disabled={!ui.note.trim()}>Add note</button>
+                </div>
+              </form>
+            </div>
+          </section>
+        </div>
+
+        <div class="stack is-lg">
+          <section e:if={!ui.editing} class="card">
+            <div class="card-head row">
+              <h2>Details</h2>
+              <button e:if={role === "manager"} class="is-ghost is-sm" onclick={() => onEdit(ui, edit, wo)}>Edit</button>
+            </div>
+            <div class="card-body">
+              <dl class="wo-dl">
+                <dt>Assigned</dt>
+                <dd>{wo.assigneeName ?? "Unassigned"}</dd>
+                <dt>Due</dt>
+                <dd class={[isOverdue(wo, today) && "is-late"]}>{dueLabel(wo.dueDate, today)}</dd>
+                <dt>Requested by</dt>
+                <dd>{wo.requesterName ?? (wo.pmScheduleId ? "Preventive schedule" : "—")}</dd>
+                <dt>Opened</dt>
+                <dd>{shortDate(wo.createdAt)}</dd>
+                <dt>Time spent</dt>
+                <dd>{hours(elapsedSeconds(wo, now.value))}</dd>
+                <dt e:if={wo.completedAt}>Completed</dt>
+                <dd e:if={wo.completedAt}>{wo.completedAt ? shortDate(wo.completedAt) : ""}</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section e:else class="card">
+            <div class="card-head"><h2>Edit work order</h2></div>
+            <form class="card-body edit-form stack" onsubmit={() => onSave(ui, edit, orders, wo, techs)}>
+              <div class="field">
+                <label for="edit-title">Title</label>
+                <input id="edit-title" value={edit.title} required>
+              </div>
+              <div class="field">
+                <label for="edit-status">Status</label>
+                <select id="edit-status" value={edit.status}>
+                  <option e:for={s of STATUSES} id={s.key} value={s.key}>{s.label}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="edit-priority">Priority</label>
+                <select id="edit-priority" value={edit.priority}>
+                  <option e:for={p of PRIORITIES} id={p.key} value={p.key}>{p.label}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="edit-tech">Technician</label>
+                <select id="edit-tech" value={edit.assignedTo}>
+                  <option value="">Unassigned</option>
+                  <option e:for={t of techs} value={t.id}>{t.name}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="edit-due">Due date</label>
+                <input id="edit-due" type="date" value={edit.dueDate}>
+              </div>
+              <label><input type="checkbox" checked={edit.assetDown}> Asset is down</label>
+              <div class="field">
+                <label for="edit-description">Description</label>
+                <textarea id="edit-description" value={edit.description}></textarea>
+              </div>
+              <div class="form-actions row">
+                <button type="button" class="is-ghost" onclick={() => ui.editing = false}>Cancel</button>
+                <button type="submit" class="is-primary">Save</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><h2>Parts used</h2></div>
+            <div class="card-body stack">
+              <ul e:if={used.length > 0} class="parts-used">
+                <li e:for={use of used.sort((a, b) => +a.createdAt - +b.createdAt)} class="row">
+                  <div class="stack is-xs">
+                    <span>{use.qty} {use.unit} · {use.partName}</span>
+                    <span class="sku">{use.sku}{use.usedByName ? ` · ${use.usedByName}` : ""}</span>
+                  </div>
+                  <button e:if={stock && canWork(role, wo) && wo.status !== "done"}
+                          class="is-ghost is-sm"
+                          aria-label={`Return ${use.partName}`}
+                          onclick={() => onReturnPart(ui, use)}>Return</button>
+                </li>
+              </ul>
+              <p e:else class="empty-line">No parts used.</p>
+
+              <form e:if={stock && canWork(role, wo) && wo.status !== "done"}
+                    class="part-form"
+                    onsubmit={() => onUsePart(ui, wo)}>
+                <select value={ui.partId} aria-label="Part">
+                  <option value="">Pick a part…</option>
+                  <option e:for={p of stock!.sort((a, b) => a.name.localeCompare(b.name))}
+                          value={p.id}
+                          disabled={p.stock === 0}>{partLabel(p)}</option>
+                </select>
+                <input type="number" min="1" step="1" value={ui.qty} aria-label="Quantity">
+                <button type="submit">Use</button>
+              </form>
+              <p e:if={ui.partError} class="error" role="alert">{ui.partError}</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </Layout>
+</html>

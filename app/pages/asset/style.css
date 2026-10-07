@@ -1,0 +1,143 @@
+@import "#app/shared/styles/page.css";
+
+.asset-head {
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.asset-head h1 {
+  margin: 0;
+}
+
+.asset-meta {
+  color: var(--ink-soft);
+}
+
+.asset-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.summary {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+}
+
+.summary-label {
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.summary-value {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.history td,
+.history th {
+  font-size: var(--text-sm);
+  vertical-align: top;
+}
+
+.history .num {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.history .sub {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+
+.history .nowrap {
+  white-space: nowrap;
+}
+
+@media (max-width: 47.99rem) {
+  .history thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .history,
+  .history tbody,
+  .history tr,
+  .history td {
+    display: block;
+  }
+
+  .history tr {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .history tr + tr {
+    border-top: 1px solid var(--rule);
+  }
+
+  .history td {
+    padding: var(--space-1) 0;
+    border: none;
+  }
+
+  .history td[data-label] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-1) var(--space-2);
+    white-space: normal;
+  }
+
+  .history td[data-label]::before {
+    content: attr(data-label);
+    margin-inline-end: auto;
+    font-size: var(--text-xs);
+    color: var(--ink-soft);
+  }
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.sched-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sched-list li {
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--text-sm);
+}
+
+.sched-list li:last-child {
+  border-bottom: 0;
+}
+
+.muted {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+@media (max-width: 48rem) {
+  .asset-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

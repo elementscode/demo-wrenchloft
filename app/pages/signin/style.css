@@ -1,0 +1,62 @@
+@import "#app/shared/styles/page.css";
+
+.signin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+  gap: var(--space-10);
+  align-items: start;
+  padding-block: var(--space-8);
+}
+
+.signin-intro {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.demo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.demo-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+  width: 100%;
+  height: auto;
+  padding: var(--space-3) var(--space-4);
+  text-align: start;
+  font-weight: var(--weight-normal);
+}
+
+.demo-name {
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+}
+
+.demo-email {
+  grid-row: 2;
+  grid-column: 1;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+.demo-login .pill {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+.demo-password {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 48rem) {
+  .signin-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+    padding-block: var(--space-2);
+  }
+}

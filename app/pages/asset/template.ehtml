@@ -1,0 +1,111 @@
+import "./style.css";
+import { Layout } from "#app/shared/templates/layout";
+import { Role } from "#app/shared/services/auth";
+import { AssetRow, HistoryRow } from "#app/shared/services/assets";
+import { Schedule } from "#app/shared/services/preventive";
+import { hours, shortDate, dueLabel, dueLabelInline, STATUS_LABEL, STATUS_PILL } from "#app/shared/services/format";
+
+function totalSeconds(history: HistoryRow[]): number {
+  return history.reduce((sum, h) => sum + h.secondsSpent, 0);
+}
+
+function downtimeHours(history: HistoryRow[]): string {
+  let ms = history
+    .filter((h) => h.assetDown)
+    .reduce((sum, h) => sum + ((h.completedAt ?? new Date()).getTime() - h.createdAt.getTime()), 0);
+
+  return `${(ms / 3_600_000).toFixed(1)} h`;
+}
+
+function every(s: Schedule): string {
+  return s.every === 1 ? `every ${s.unit.slice(0, -1)}` : `every ${s.every} ${s.unit}`;
+}
+
+<html lang="en" class="page-asset" (
+  asset: AssetRow,
+  history: HistoryRow[],
+  plans: Schedule[],
+  role: Role,
+  today: string,
+)>
+  <Layout title={asset.name} active="assets" shell="is-wide">
+    <div class="stack is-lg">
+      <div class="stack is-sm">
+        <a href="/equipment">← Assets</a>
+        <div class="asset-head row">
+          <div class="stack is-xs">
+            <h1>{asset.name}</h1>
+            <span class="asset-meta">{asset.building} · {asset.line} · {asset.category}</span>
+          </div>
+          <a class="button is-primary" href={`/work-orders/new?asset=${asset.id}`}>Report a problem</a>
+        </div>
+      </div>
+
+      <div class="asset-summary">
+        <div class="summary">
+          <span class="summary-label">Open work</span>
+          <span class="summary-value">{asset.openCount}</span>
+        </div>
+        <div class="summary">
+          <span class="summary-label">Jobs on record</span>
+          <span class="summary-value">{history.length}</span>
+        </div>
+        <div class="summary">
+          <span class="summary-label">Labor logged</span>
+          <span class="summary-value">{hours(totalSeconds(history))}</span>
+        </div>
+        <div class="summary">
+          <span class="summary-label">Downtime on record</span>
+          <span class="summary-value">{downtimeHours(history)}</span>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-head"><h2>Preventive schedules</h2></div>
+        <div class="card-body">
+          <ul e:if={plans.length > 0} class="sched-list">
+            <li e:for={s of plans} class="row">
+              <span><strong>{s.title}</strong> · {every(s)}{s.active ? "" : " · paused"}</span>
+              <span class="muted">{s.openOrderDue ? `Open order due ${dueLabelInline(s.openOrderDue, today)}` : `Next ${dueLabelInline(s.nextDue, today)}`}</span>
+            </li>
+          </ul>
+          <p e:else class="muted">No preventive schedule.<a e:if={role === "manager"} href="/pm"> Add one.</a></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Work history</h2></div>
+        <div e:if={history.length > 0} class="table-wrap">
+          <table class="history">
+            <thead>
+              <tr>
+                <th>Work order</th>
+                <th>Status</th>
+                <th>Technician</th>
+                <th>Opened</th>
+                <th>Finished</th>
+                <th>Time</th>
+                <th>Parts</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr e:for={h of history}>
+                <td>
+                  <a href={`/work-orders/${h.id}`}>{h.title}</a>
+                  <span class="sub"><span class="num">WO-{h.number}</span>{h.pmScheduleId ? " · preventive" : ""}{h.assetDown ? " · asset down" : ""}</span>
+                </td>
+                <td data-label="Status"><span class={["pill", STATUS_PILL[h.status]]}>{STATUS_LABEL[h.status]}</span></td>
+                <td data-label="Technician">{h.assigneeName ?? "—"}</td>
+                <td class="nowrap" data-label="Opened">{shortDate(h.createdAt)}</td>
+                <td class="nowrap" data-label="Finished">{h.completedAt ? shortDate(h.completedAt) : "—"}</td>
+                <td class="nowrap" data-label="Time">{h.secondsSpent > 0 ? hours(h.secondsSpent) : "—"}</td>
+                <td data-label="Parts">{h.parts ?? "—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div e:else class="card-body"><p class="muted">No work recorded yet.</p></div>
+      </section>
+    </div>
+  </Layout>
+</html>

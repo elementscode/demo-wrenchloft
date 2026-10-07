@@ -1,0 +1,120 @@
+import "./style.css";
+import { LiveView } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { WorkOrder } from "#app/shared/services/work-orders";
+import { dueLabel, parseIsoDate, PRIORITY_PILL } from "#app/shared/services/format";
+import { openByPriority, overdue, pmThisMonth, downtimeByAsset, downNow, PmScore } from "./stats";
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function percent(score: PmScore): string {
+  return score.due === 0 ? "—" : `${Math.round((score.onTime / score.due) * 100)}%`;
+}
+
+function width(value: number, max: number): string {
+  return max === 0 ? "0%" : `${(value / max) * 100}%`;
+}
+
+function onTick(now: { value: Date }) {
+  now.value = new Date();
+}
+
+<html lang="en" class="page-dashboard" (
+  orders: LiveView<WorkOrder>,
+  today: string,
+  private now: { value: Date } = { value: new Date() },
+) oninit={() => setInterval(() => onTick(now), 60_000)}>
+  <Layout title="Dashboard" active="dashboard" shell="is-wide">
+    <div class="stack is-lg">
+      <div class="dash-head row">
+        <h1>Dashboard</h1>
+        <a class="button is-primary" href="/work-orders/new">New work order</a>
+      </div>
+
+      <div class="tiles">
+        <a class="tile" href="/board">
+          <span class="tile-label">Open work orders</span>
+          <span class="tile-value">{orders.filter((wo) => wo.status !== "done").length}</span>
+          <span class="tile-note">{orders.filter((wo) => wo.status === "requested").length} waiting to be planned</span>
+        </a>
+
+        <a class={["tile", overdue(orders, today).length > 0 && "is-alert"]} href="#overdue">
+          <span class="tile-label">Overdue</span>
+          <span class="tile-value">{overdue(orders, today).length}</span>
+          <span class="tile-note">past their due date and not done</span>
+        </a>
+
+        <div class="tile">
+          <span class="tile-label">Preventive on time, {MONTHS[parseIsoDate(today).getMonth()]}</span>
+          <span class="tile-value">{percent(pmThisMonth(orders, today))}</span>
+          <span class="tile-note">{pmThisMonth(orders, today).onTime} of {pmThisMonth(orders, today).due} due so far · {pmThisMonth(orders, today).pending} still ahead</span>
+        </div>
+
+        <div class={["tile", downNow(orders) > 0 && "is-alert"]}>
+          <span class="tile-label">Assets down now</span>
+          <span class="tile-value">{downNow(orders)}</span>
+          <span class="tile-note">with an open work order</span>
+        </div>
+      </div>
+
+      <div class="charts">
+        <section class="card">
+          <div class="card-head"><h2>Open work by priority</h2></div>
+          <div class="card-body stack">
+            <ul class="bars" aria-label="Open work orders by priority">
+              <li e:for={row of openByPriority(orders)} class="bar-row" title={`${row.label}: ${row.count} open`}>
+                <span class="bar-label"><span class={["pill", PRIORITY_PILL[row.id]]}>{row.label}</span></span>
+                <span class="bar-track"><span class="bar-fill" style={{ width: width(row.count, Math.max(...openByPriority(orders).map((r) => r.count))), display: "block" }}></span></span>
+                <span class="bar-value">{row.count}</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Downtime by asset, last 30 days</h2></div>
+          <div class="card-body stack">
+            <ul e:if={downtimeByAsset(orders, today, now.value).length > 0} class="bars" aria-label="Downtime hours by asset">
+              <li e:for={row of downtimeByAsset(orders, today, now.value)} class="bar-row" title={`${row.name}: ${row.hours.toFixed(1)} hours down${row.open ? ", still down" : ""}`}>
+                <a class="bar-label" href={`/equipment/${row.id}`}>{row.name}<span class="bar-sub">{row.line}{row.open ? " · down now" : ""}</span></a>
+                <span class="bar-track"><span class="bar-fill" style={{ width: width(row.hours, downtimeByAsset(orders, today, now.value)[0].hours), display: "block" }}></span></span>
+                <span class="bar-value">{row.hours.toFixed(1)} h</span>
+              </li>
+            </ul>
+            <p e:else class="chart-note">No downtime recorded in the last 30 days.</p>
+            <p class="chart-note">From work orders marked "asset down", opened to finished.</p>
+          </div>
+        </section>
+      </div>
+
+      <section id="overdue" class="card">
+        <div class="card-head"><h2>Overdue</h2></div>
+        <div class="card-body">
+          <div e:if={overdue(orders, today).length > 0} class="table-wrap">
+            <table class="overdue-table">
+              <thead>
+                <tr>
+                  <th>Work order</th>
+                  <th>Asset</th>
+                  <th>Technician</th>
+                  <th>Priority</th>
+                  <th>Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr e:for={wo of overdue(orders, today)}>
+                  <td><span class="num">WO-{wo.number}</span> <a href={`/work-orders/${wo.id}`}>{wo.title}</a></td>
+                  <td>{wo.assetName}</td>
+                  <td>{wo.assigneeName ?? "Unassigned"}</td>
+                  <td><span class={["pill", PRIORITY_PILL[wo.priority]]}>{wo.priority}</span></td>
+                  <td class="late">{dueLabel(wo.dueDate, today)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p e:else class="chart-note">Nothing overdue.</p>
+        </div>
+      </section>
+    </div>
+  </Layout>
+</html>

@@ -1,0 +1,203 @@
+import "./style.css";
+import { LiveView } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { Timer } from "#app/shared/templates/timer";
+import { WorkOrder, Status, STATUSES } from "#app/shared/services/work-orders";
+import { dueLabel, isOverdue, PRIORITY_PILL, PRIORITY_RANK, addDays, isoDate, parseIsoDate, shortDate } from "#app/shared/services/format";
+
+interface BoardView {
+  column: Status;
+}
+
+interface Drag {
+  id: string;
+  over: string;
+  error: string;
+}
+
+/** Done work stays on the board for two weeks, then lives on the asset's history. */
+export function column(orders: LiveView<WorkOrder>, status: Status, today: string): WorkOrder[] {
+  let cutoff = addDays(parseIsoDate(today), -14).getTime();
+
+  return orders
+    .filter((wo) => wo.status === status && (status !== "done" || (wo.completedAt?.getTime() ?? 0) >= cutoff))
+    .sort((a, b) => {
+      if (status === "done") {
+        return (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0);
+      }
+
+      return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+        || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999")
+        || a.number - b.number;
+    });
+}
+
+function onDragStart(e: DragEvent, drag: Drag, wo: WorkOrder) {
+  drag.id = wo.id;
+  drag.error = "";
+  e.dataTransfer?.setData("text/plain", wo.id);
+
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function onDragOver(e: DragEvent, drag: Drag, status: Status) {
+  if (!drag.id) {
+    return;
+  }
+
+  e.preventDefault();
+  drag.over = status;
+}
+
+function onDragLeave(e: DragEvent, drag: Drag, status: Status) {
+  let to = e.relatedTarget as Node | null;
+  if (drag.over === status && !(e.currentTarget as Element).contains(to)) {
+    drag.over = "";
+  }
+}
+
+function moveTo(drag: Drag, orders: LiveView<WorkOrder>, wo: WorkOrder, status: Status, today: string) {
+  if (wo.status === status) {
+    return;
+  }
+
+  try {
+    orders.update({
+      ...wo,
+      status,
+      dueDate: status === "scheduled" && !wo.dueDate ? today : wo.dueDate,
+      timerStartedAt: status === "in_progress" ? wo.timerStartedAt : null,
+      completedAt: status === "done" ? new Date() : null,
+    });
+  } catch (err: any) {
+    drag.error = err.message;
+  }
+}
+
+function onDrop(e: DragEvent, drag: Drag, orders: LiveView<WorkOrder>, status: Status, today: string) {
+  e.preventDefault();
+
+  let wo = orders.get(drag.id);
+  drag.id = "";
+  drag.over = "";
+
+  if (wo) {
+    moveTo(drag, orders, wo, status, today);
+  }
+}
+
+function onMove(e: Event, drag: Drag, orders: LiveView<WorkOrder>, wo: WorkOrder, today: string) {
+  drag.error = "";
+  moveTo(drag, orders, wo, (e.target as HTMLSelectElement).value as Status, today);
+}
+
+function onShowColumn(view: BoardView, status: Status) {
+  view.column = status;
+
+  let board = document.querySelector<HTMLElement>(".board");
+  let col = document.getElementById(status);
+
+  if (board && col) {
+    board.scrollTo({ left: col.offsetLeft - board.offsetLeft, behavior: "smooth" });
+  }
+}
+
+function onBoardScroll(e: Event, view: BoardView) {
+  let board = e.currentTarget as HTMLElement;
+  let index = Math.round(board.scrollLeft / board.clientWidth);
+  let status = STATUSES[index]?.key;
+
+  if (status && view.column !== status) {
+    view.column = status;
+  }
+}
+
+function onDragEnd(drag: Drag) {
+  drag.id = "";
+  drag.over = "";
+}
+
+<html lang="en" class="page-board" (
+  orders: LiveView<WorkOrder>,
+  today: string,
+  private drag: Drag = {
+    id: "",
+    over: "",
+    error: "",
+  },
+  private view: BoardView = { column: "requested" },
+)>
+  <Layout title="Board" active="board" shell="is-full">
+    <div class="stack">
+      <div class="board-head row">
+        <div class="stack is-xs">
+          <h1>Board</h1>
+          <p class="board-legend">Drag a card to change its status. Everyone watching sees it move.</p>
+        </div>
+        <a class="button is-primary" href="/work-orders/new">New work order</a>
+      </div>
+
+      <p e:if={drag.error} class="callout is-danger" role="alert">{drag.error}</p>
+
+      <div class="board-switch tab-list md:hidden" aria-label="Columns">
+        <button e:for={col of STATUSES.map((s) => ({ id: s.key, ...s }))}
+                type="button"
+                class={["tab", view.column === col.key && "is-active"]}
+                aria-pressed={view.column === col.key}
+                onclick={() => onShowColumn(view, col.key)}>
+          {col.label}
+          <span class="board-count">{column(orders, col.key, today).length}</span>
+        </button>
+      </div>
+
+      <div class="board" onscroll={(e) => onBoardScroll(e, view)}>
+        <section e:for={col of STATUSES}
+                 id={col.key}
+                 class={["board-col", drag.over === col.key && "is-over"]}
+                 aria-label={col.label}
+                 ondragover={(e) => onDragOver(e, drag, col.key)}
+                 ondragleave={(e) => onDragLeave(e, drag, col.key)}
+                 ondrop={(e) => onDrop(e, drag, orders, col.key, today)}>
+          <div class="board-col-head row">
+            <span>{col.label}</span>
+            <span class="board-count">{column(orders, col.key, today).length}</span>
+          </div>
+
+          <div e:for={wo of column(orders, col.key, today)} class="wo-item">
+            <a href={`/work-orders/${wo.id}`}
+               draggable="true"
+               class={["wo-card", drag.id === wo.id && "is-dragging", wo.priority === "urgent" && "is-urgent"]}
+               ondragstart={(e) => onDragStart(e, drag, wo)}
+               ondragend={() => onDragEnd(drag)}>
+              <div class="wo-top row">
+                <span class="wo-num">WO-{wo.number}</span>
+                <span class={["pill", PRIORITY_PILL[wo.priority]]}>{wo.priority}</span>
+              </div>
+              <span class="wo-title">{wo.title}</span>
+              <span class="wo-asset">{wo.assetName} · {wo.line}</span>
+              <div class="wo-tags cluster" e:if={wo.pmScheduleId || wo.assetDown}>
+                <span e:if={wo.pmScheduleId} class="pill">Preventive</span>
+                <span e:if={wo.assetDown && wo.status !== "done"} class="pill is-danger"><span class="pill-dot"></span>Asset down</span>
+              </div>
+              <div class="wo-meta row">
+                <span>{wo.assigneeName ?? "Unassigned"}</span>
+                <Timer e:if={wo.status === "in_progress"} {wo} />
+                <span e:elseif={wo.status !== "done"} class={["wo-due", isOverdue(wo, today) && "is-late"]}>{dueLabel(wo.dueDate, today)}</span>
+                <span e:else>{wo.completedAt ? shortDate(wo.completedAt) : ""}</span>
+              </div>
+            </a>
+            <select class="wo-move is-sm md:hidden"
+                    aria-label={`Move WO-${wo.number}`}
+                    onchange={(e) => onMove(e, drag, orders, wo, today)}>
+              <option e:for={s of STATUSES.map((s) => ({ id: s.key, ...s }))} value={s.key} selected={wo.status === s.key}>{s.label}</option>
+            </select>
+          </div>
+
+          <p e:if={column(orders, col.key, today).length === 0} class="board-empty">Nothing here</p>
+        </section>
+      </div>
+    </div>
+  </Layout>
+</html>

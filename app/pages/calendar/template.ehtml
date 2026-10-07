@@ -1,0 +1,151 @@
+import "./style.css";
+import { LiveView } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { WorkOrder } from "#app/shared/services/work-orders";
+import {
+  addDays,
+  isoDate,
+  parseIsoDate,
+  shortDate,
+  dayName,
+  isOverdue,
+  PRIORITY_RANK,
+  STATUS_LABEL,
+} from "#app/shared/services/format";
+
+interface Day {
+  id: string;
+  date: Date;
+}
+
+function days(start: string): Day[] {
+  let first = parseIsoDate(start);
+  return [0, 1, 2, 3, 4, 5, 6].map((i) => {
+    let date = addDays(first, i);
+    return { id: isoDate(date), date };
+  });
+}
+
+/** Overdue open work rolls forward onto today so it does not hide in the past. */
+export function onDay(orders: LiveView<WorkOrder>, day: string, today: string): WorkOrder[] {
+  return orders
+    .filter((wo) => {
+      if (!wo.dueDate || wo.status === "requested") {
+        return false;
+      }
+
+      if (isOverdue(wo, today)) {
+        return day === today;
+      }
+
+      return wo.dueDate === day;
+    })
+    .sort((a, b) => Number(a.status === "done") - Number(b.status === "done") || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
+}
+
+interface CalendarView {
+  day: string;
+}
+
+function onShowDay(view: CalendarView, day: string) {
+  view.day = day;
+
+  let cal = document.querySelector<HTMLElement>(".cal");
+  let section = document.getElementById(`day-${day}`);
+
+  if (cal && section) {
+    cal.scrollTo({ left: section.offsetLeft - cal.offsetLeft, behavior: "smooth" });
+  }
+}
+
+function onCalendarScroll(e: Event, view: CalendarView, start: string) {
+  let cal = e.currentTarget as HTMLElement;
+  let index = Math.round(cal.scrollLeft / cal.clientWidth);
+  let day = days(start)[index]?.id;
+
+  if (day && view.day !== day) {
+    view.day = day;
+  }
+}
+
+/** On a phone the week shows one day at a time; open it on today when today is in this week. */
+function onCalendarInsert(e: Event, view: CalendarView, start: string, today: string) {
+  let week = days(start);
+  view.day = week.some((d) => d.id === today) ? today : week[0].id;
+
+  let cal = e.target as HTMLElement;
+  let section = document.getElementById(`day-${view.day}`);
+
+  if (section && cal.scrollWidth > cal.clientWidth) {
+    cal.scrollLeft = section.offsetLeft - cal.offsetLeft;
+  }
+}
+
+function weekLink(start: string, offset: number): string {
+  return `/calendar?week=${isoDate(addDays(parseIsoDate(start), offset * 7))}`;
+}
+
+<html lang="en" class="page-calendar" (
+  orders: LiveView<WorkOrder>,
+  today: string,
+  start: string,
+  private view: CalendarView = { day: "" },
+)>
+  <Layout title="Calendar" active="calendar" shell="is-full">
+    <div class="stack">
+      <div class="cal-head row">
+        <div class="stack is-xs">
+          <h1>Scheduled work</h1>
+          <span class="cal-range">Week of {shortDate(parseIsoDate(start))} – {shortDate(addDays(parseIsoDate(start), 6))}</span>
+        </div>
+        <div class="cal-nav row">
+          <a class="button is-sm" href={weekLink(start, -1)} aria-label="Previous week">← Prev</a>
+          <a class="button is-sm" href="/calendar">This week</a>
+          <a class="button is-sm" href={weekLink(start, 1)} aria-label="Next week">Next →</a>
+        </div>
+      </div>
+
+      <div class="cal-switch tab-list md:hidden" aria-label="Days">
+        <button e:for={day of days(start)}
+                type="button"
+                class={["tab", view.day === day.id && "is-active"]}
+                aria-pressed={view.day === day.id}
+                onclick={() => onShowDay(view, day.id)}>
+          {dayName(day.date)} {day.date.getDate()}
+        </button>
+      </div>
+
+      <div class="cal"
+           oninsert={(e) => onCalendarInsert(e, view, start, today)}
+           onscroll={(e) => onCalendarScroll(e, view, start)}>
+        <section e:for={day of days(start)}
+                 id={`day-${day.id}`}
+                 class={["cal-day", day.id === today && "is-today", (day.date.getDay() === 0 || day.date.getDay() === 6) && "is-weekend"]}
+                 aria-label={`${dayName(day.date)} ${shortDate(day.date)}`}>
+          <div class="cal-day-head row">
+            <span class="cal-dow">{dayName(day.date)}</span>
+            <span class="cal-date">{day.date.getDate()}</span>
+          </div>
+
+          <a e:for={wo of onDay(orders, day.id, today)}
+             href={`/work-orders/${wo.id}`}
+             class={["cal-item", `is-${wo.status}`, isOverdue(wo, today) && "is-late"]}>
+            <span class="cal-title">{wo.title}</span>
+            <span class="cal-meta">{wo.assetName}</span>
+            <span class="cal-meta">{wo.assigneeName ?? "Unassigned"} · {isOverdue(wo, today) ? `late, was ${shortDate(parseIsoDate(wo.dueDate!))}` : STATUS_LABEL[wo.status]}</span>
+          </a>
+
+          <span e:if={onDay(orders, day.id, today).length > 0} class="cal-load">{onDay(orders, day.id, today).length === 1 ? "1 job" : `${onDay(orders, day.id, today).length} jobs`}</span>
+        </section>
+      </div>
+
+      <div class="cal-legend cluster">
+        <span><span class="cal-swatch" style="background: var(--info)"></span>Scheduled</span>
+        <span><span class="cal-swatch" style="background: var(--accent)"></span>In progress</span>
+        <span><span class="cal-swatch" style="background: var(--ink-dim)"></span>On hold</span>
+        <span><span class="cal-swatch" style="background: var(--danger)"></span>Overdue</span>
+        <span><span class="cal-swatch" style="background: var(--success)"></span>Done</span>
+      </div>
+    </div>
+  </Layout>
+</html>

@@ -1,0 +1,139 @@
+import "./style.css";
+import { File, redirect, ValidationError } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { Role } from "#app/shared/services/auth";
+import {
+  AssetOption,
+  Person,
+  RequestForm,
+  PRIORITIES,
+  createWorkOrder,
+} from "#app/shared/services/work-orders";
+
+interface Ui {
+  busy: boolean;
+  error: string;
+  errors: Record<string, string[]>;
+}
+
+function onSubmit(form: RequestForm, ui: Ui, role: Role) {
+  ui.busy = true;
+  ui.error = "";
+  ui.errors = {};
+
+  try {
+    let id = createWorkOrder(form);
+    redirect(role === "requester" ? "/requests" : `/work-orders/${id}`);
+  } catch (err: any) {
+    if (err instanceof ValidationError && err.errors) {
+      ui.errors = err.errors as Record<string, string[]>;
+    } else {
+      ui.error = err.message;
+    }
+
+    ui.busy = false;
+  }
+}
+
+function buildings(assets: AssetOption[]): string[] {
+  return [...new Set(assets.map((a) => a.building))];
+}
+
+<html lang="en" class="page-new-work-order" (
+  role: Role,
+  assets: AssetOption[],
+  techs: Person[],
+  assetId: string,
+  private form: RequestForm = {
+    assetId,
+    title: "",
+    description: "",
+    priority: "medium",
+    assetDown: false,
+    assignedTo: "",
+    dueDate: "",
+    photos: [],
+  },
+  private ui: Ui = {
+    busy: false,
+    error: "",
+    errors: {},
+  },
+)>
+  <Layout title={role === "requester" ? "Report a problem" : "New work order"}
+          active={role === "requester" ? "new" : "board"}
+          shell="is-form">
+    <form class="new-wo stack is-lg" onsubmit={() => onSubmit(form, ui, role)}>
+      <div class="stack is-xs">
+        <h1>{role === "requester" ? "Report a problem" : "New work order"}</h1>
+        <p class="new-wo-lede" e:if={role === "requester"}>Maintenance sees it on the board right away. You can follow it on your requests page.</p>
+      </div>
+
+      <p e:if={ui.error} class="callout is-danger" role="alert">{ui.error}</p>
+
+      <div class="field">
+        <label for="asset">Asset</label>
+        <select id="asset" value={form.assetId} class={[ui.errors.assetId && "is-error"]}>
+          <option value="">Pick the machine…</option>
+          <optgroup e:for={b of buildings(assets)} id={b} label={b}>
+            <option e:for={a of assets.filter((x) => x.building === b)} value={a.id}>{a.name} · {a.line}</option>
+          </optgroup>
+        </select>
+        <p e:if={ui.errors.assetId} class="error">{ui.errors.assetId?.[0]}</p>
+      </div>
+
+      <div class="field">
+        <label for="title">What's wrong?</label>
+        <input id="title" value={form.title} placeholder="Leaking oil at the main cylinder" class={[ui.errors.title && "is-error"]}>
+        <p e:if={ui.errors.title} class="error">{ui.errors.title?.[0]}</p>
+      </div>
+
+      <div class="field">
+        <label for="description">Details</label>
+        <textarea id="description" value={form.description} placeholder="When did it start, what were you running, anything you already tried."></textarea>
+      </div>
+
+      <div class="field">
+        <label for="priority">Priority</label>
+        <select id="priority" value={form.priority}>
+          <option e:for={p of PRIORITIES} id={p.key} value={p.key}>{p.label}</option>
+        </select>
+      </div>
+
+      <label><input type="checkbox" checked={form.assetDown}> The machine is down</label>
+
+      <div e:if={role === "manager"} class="form is-grid">
+        <div class="field">
+          <label for="tech">Technician</label>
+          <select id="tech" value={form.assignedTo}>
+            <option value="">Unassigned</option>
+            <option e:for={t of techs} value={t.id}>{t.name}</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="due">Due date</label>
+          <input id="due" type="date" value={form.dueDate}>
+        </div>
+
+        <p class="hint field is-full">With a technician and a date it goes straight to Scheduled.</p>
+      </div>
+
+      <div class="field">
+        <span class="label">Photos</span>
+        <label class="button file-pick">
+          {form.photos.length > 0 ? "Change photos" : "Add photos"}
+          <input id="photos" type="file" accept="image/*" multiple value={form.photos}>
+        </label>
+        <ul e:if={form.photos.length > 0} class="photo-names">
+          <li e:for={f of form.photos} id={f.name}>{f.name}</li>
+        </ul>
+      </div>
+
+      <div class="form-actions row">
+        <a class="button is-ghost" href={role === "requester" ? "/requests" : "/board"}>Cancel</a>
+        <button type="submit" class="is-primary" disabled={ui.busy}>{ui.busy ? "Sending…" : role === "requester" ? "Send request" : "Create work order"}</button>
+      </div>
+    </form>
+  </Layout>
+</html>

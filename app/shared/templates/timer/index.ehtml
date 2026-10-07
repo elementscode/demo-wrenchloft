@@ -1,0 +1,19 @@
+import "./style.css";
+import { Clocked, clock, elapsedSeconds } from "#app/shared/services/format";
+
+function onTick(now: { value: Date }) {
+  now.value = new Date();
+}
+
+<Timer (
+  wo: Clocked,
+  private now: { value: Date } = { value: new Date() },
+  private ticker: { id: any } = { id: 0 },
+)>
+  <span class={["timer row", wo.timerStartedAt && "is-running"]}
+        oninit={() => ticker.id = setInterval(() => onTick(now), 1000)}
+        onremove={() => clearInterval(ticker.id)}>
+    <span class="timer-dot" aria-hidden="true"></span>
+    <span>{clock(elapsedSeconds(wo, now.value))}</span>
+  </span>
+</Timer>

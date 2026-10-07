@@ -1,0 +1,153 @@
+import "./style.css";
+import { LiveView } from "@elements/app";
+import { Layout } from "#app/shared/templates/layout";
+import { Timer } from "#app/shared/templates/timer";
+import { WorkOrder, startWork, pauseWork, finishWork } from "#app/shared/services/work-orders";
+import {
+  dueLabel, dueLabelInline,
+  isOverdue,
+  parseIsoDate,
+  addDays,
+  isoDate,
+  shortDate,
+  dayName,
+  PRIORITY_PILL,
+  PRIORITY_RANK,
+  STATUS_LABEL,
+  STATUS_PILL,
+  todayIn,
+} from "#app/shared/services/format";
+
+interface Ui {
+  busy: string;
+  error: string;
+}
+
+function byUrgency(a: WorkOrder, b: WorkOrder): number {
+  return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999")
+    || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+    || a.number - b.number;
+}
+
+/** In progress and anything due today or earlier, the day's actual list. */
+export function todaysWork(orders: LiveView<WorkOrder>, today: string): WorkOrder[] {
+  return orders
+    .filter((wo) => wo.status !== "done" && (wo.status === "in_progress" || (!!wo.dueDate && wo.dueDate <= today)))
+    .sort((a, b) => Number(b.status === "in_progress") - Number(a.status === "in_progress") || byUrgency(a, b));
+}
+
+export function upcoming(orders: LiveView<WorkOrder>, today: string): WorkOrder[] {
+  let horizon = isoDate(addDays(parseIsoDate(today), 7));
+
+  return orders
+    .filter((wo) => wo.status !== "done" && wo.status !== "in_progress" && (!wo.dueDate || (wo.dueDate > today && wo.dueDate <= horizon)))
+    .sort(byUrgency);
+}
+
+function finishedToday(orders: LiveView<WorkOrder>, today: string): WorkOrder[] {
+  return orders.filter((wo) => wo.status === "done" && !!wo.completedAt && isoDate(wo.completedAt) === today);
+}
+
+function onAction(ui: Ui, action: "start" | "pause" | "finish", wo: WorkOrder) {
+  ui.busy = wo.id;
+  ui.error = "";
+
+  try {
+    switch (action) {
+      case "start":
+        startWork(wo.id);
+        break;
+
+      case "pause":
+        pauseWork(wo.id);
+        break;
+
+      case "finish":
+        finishWork(wo.id);
+        break;
+    }
+  } catch (err: any) {
+    ui.error = err.message;
+  }
+
+  ui.busy = "";
+}
+
+<Job (wo: WorkOrder, today: string, ui: Ui)>
+  <li class={["job", wo.timerStartedAt && "is-running"]}>
+    <div class="job-top row">
+      <span class="job-num">WO-{wo.number}</span>
+      <div class="cluster is-xs">
+        <span e:if={wo.status !== "scheduled"} class={["pill", STATUS_PILL[wo.status]]}>{STATUS_LABEL[wo.status]}</span>
+        <span class={["pill", PRIORITY_PILL[wo.priority]]}>{wo.priority}</span>
+      </div>
+    </div>
+
+    <div class="stack is-xs">
+      <a class="job-title" href={`/work-orders/${wo.id}`}>{wo.title}</a>
+      <span class="job-asset">{wo.assetName} · {wo.building} · {wo.line}</span>
+    </div>
+
+    <div class="job-bar row">
+      <Timer e:if={wo.status !== "done" && (wo.status === "in_progress" || wo.secondsSpent > 0)} {wo} />
+      <span e:if={wo.status !== "done"} class={["job-due", isOverdue(wo, today) && "is-late"]}>Due {dueLabelInline(wo.dueDate, today)}</span>
+    </div>
+
+    <div e:if={wo.status !== "done"} class="job-buttons">
+      <button e:if={wo.status !== "in_progress"}
+              class="is-primary is-lg"
+              disabled={ui.busy === wo.id}
+              onclick={() => onAction(ui, "start", wo)}>{wo.secondsSpent > 0 ? "Resume" : "Start"}</button>
+      <button e:if={wo.status === "in_progress"}
+              class="is-lg"
+              disabled={ui.busy === wo.id}
+              onclick={() => onAction(ui, "pause", wo)}>Pause</button>
+      <button e:if={wo.status === "in_progress" || wo.status === "on_hold"}
+              class={["is-lg", wo.status === "in_progress" && "is-primary"]}
+              disabled={ui.busy === wo.id}
+              onclick={() => onAction(ui, "finish", wo)}>Finish</button>
+      <a class="button is-lg" href={`/work-orders/${wo.id}`}>Details</a>
+    </div>
+  </li>
+</Job>
+
+<html lang="en" class="page-today" (
+  orders: LiveView<WorkOrder>,
+  today: string,
+  private ui: Ui = {
+    busy: "",
+    error: "",
+  },
+)>
+  <Layout title="Today" active="today" shell="is-form">
+    <div class="stack is-lg">
+      <div class="today-head stack is-xs">
+        <h1>Today</h1>
+        <span class="today-date">{dayName(parseIsoDate(today))}, {shortDate(parseIsoDate(today))} · {todaysWork(orders, today).length} on your list</span>
+      </div>
+
+      <p e:if={ui.error} class="callout is-danger" role="alert">{ui.error}</p>
+
+      <section class="today-section stack">
+        <ul e:if={todaysWork(orders, today).length > 0} class="job-list stack">
+          <Job e:for={wo of todaysWork(orders, today)} {wo} {today} {ui} />
+        </ul>
+        <p e:else class="today-empty">Nothing due today. Check upcoming work below.</p>
+      </section>
+
+      <section e:if={upcoming(orders, today).length > 0} class="today-section stack">
+        <h2>Coming up</h2>
+        <ul class="job-list stack">
+          <Job e:for={wo of upcoming(orders, today)} {wo} {today} {ui} />
+        </ul>
+      </section>
+
+      <section e:if={finishedToday(orders, today).length > 0} class="today-section stack">
+        <h2>Finished today</h2>
+        <ul class="job-list stack">
+          <Job e:for={wo of finishedToday(orders, today)} {wo} {today} {ui} />
+        </ul>
+      </section>
+    </div>
+  </Layout>
+</html>
